@@ -8,8 +8,8 @@ terraform {
 }
 
 provider "yandex" {
-token     = "y0_AgAAAAAFH0HjAATuwQAAAADZ5ehT4TxT0HA5SeOiniPLTCJJ_hM2tR8"
-cloud_id  = "b1g9g7r183chh7fal746"
-folder_id = "b1gelkmoapvj75knumo4"
+token     = ""
+cloud_id  = ""
+folder_id = ""
 zone      = "ru-central1-a"
 }
