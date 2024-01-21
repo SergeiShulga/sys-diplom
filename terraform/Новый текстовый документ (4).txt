@@ -1,0 +1,142 @@
+Для развёртывания инфраструктуры в Yandex Cloud с использованием Terraform и Ansible, вы можете использовать следующий пример конфигурации. Ниже приведены основные шаги, которые вам нужно выполнить.
+
+### Terraform
+
+1. Создайте файл `main.tf`:
+
+```hcl
+provider "yandex" {
+  token = "ваш_токен"
+  cloud_id = "ваш_cloud_id"
+  folder_id = "ваш_folder_id"
+  zone = "ваша_зона1"
+}
+
+resource "yandex_compute_instance" "web_server1" {
+  name = "web-server-1"
+  zone = "ваша_зона1"
+
+  boot_disk {
+    initialize_params {
+      image_id = "ваш_образ_ОС"
+    }
+  }
+
+  resources {
+    cores  = 2
+    memory = 4
+  }
+}
+
+resource "yandex_compute_instance" "web_server2" {
+  name = "web-server-2"
+  zone = "ваша_зона2"
+
+  boot_disk {
+    initialize_params {
+      image_id = "ваш_образ_ОС"
+    }
+  }
+
+  resources {
+    cores  = 2
+    memory = 4
+  }
+}
+
+resource "yandex_lb_target_group" "web_target_group" {
+  name = "web-target-group"
+}
+
+resource "yandex_lb_backend_group" "web_backend_group" {
+  name = "web-backend-group"
+
+  backend {
+    target_group_id = yandex_lb_target_group.web_target_group.id
+  }
+}
+
+resource "yandex_lb_backend" "web_backend1" {
+  backend_group_id = yandex_lb_backend_group.web_backend_group.id
+  target {
+    subnet_id = yandex_compute_instance.web_server1.network_interfaces.0.subnet_id
+  }
+}
+
+resource "yandex_lb_backend" "web_backend2" {
+  backend_group_id = yandex_lb_backend_group.web_backend_group.id
+  target {
+    subnet_id = yandex_compute_instance.web_server2.network_interfaces.0.subnet_id
+  }
+}
+
+resource "yandex_lb_router" "web_router" {
+  name = "web-router"
+
+  default_route_action {
+    target_group_id = yandex_lb_backend_group.web_backend_group.id
+  }
+
+  http_route_action {
+    priority = 10
+    prefix   = "/"
+    target_group_id = yandex_lb_backend_group.web_backend_group.id
+  }
+}
+
+resource "yandex_lb" "web_lb" {
+  name = "web-lb"
+
+  listener {
+    name = "web-listener"
+    port = 80
+    target_port = 80
+    external_address_spec {
+      ip_version = "ipv4"
+    }
+  }
+
+  attached_target_group {
+    target_group_id = yandex_lb_target_group.web_target_group.id
+  }
+}
+```
+
+2. Запустите команды Terraform:
+
+```bash
+terraform init
+terraform apply
+```
+
+### Ansible
+
+1. Создайте файл `ansible-playbook.yml`:
+
+```yaml
+---
+- name: Configure Nginx on Web Servers
+  hosts: all
+  become: true
+  tasks:
+    - name: Install Nginx
+      yum:
+        name: nginx
+        state: present
+
+    - name: Start Nginx service
+      service:
+        name: nginx
+        state: started
+        enabled: yes
+```
+
+2. Запустите Ansible:
+
+```bash
+ansible-playbook -i <ip_web_server1>,<ip_web_server2>, -u <ваш_пользователь> ansible-playbook.yml
+```
+
+Замените `<ip_web_server1>`, `<ip_web_server2>`, и `<ваш_пользователь>` на соответствующие значения.
+
+Теперь у вас должны быть настроенные серверы с установленным Nginx, созданный Load Balancer и настроенные Target и Backend Groups. Убедитесь, что ваши переменные в конфигурационных файлах Terraform и Ansible соответствуют вашим настройкам.
