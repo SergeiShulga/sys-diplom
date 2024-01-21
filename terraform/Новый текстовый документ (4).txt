@@ -1,4 +1,4 @@
-Для развёртывания инфраструктуры в Yandex Cloud с использованием Terraform и Ansible, вы можете использовать следующий пример конфигурации. Ниже приведены основные шаги, которые вам нужно выполнить.
+Для развертывания описанной вами инфраструктуры с использованием Terraform, следуйте инструкциям ниже.
 
 ### Terraform
 
@@ -9,95 +9,185 @@ provider "yandex" {
   token = "ваш_токен"
   cloud_id = "ваш_cloud_id"
   folder_id = "ваш_folder_id"
-  zone = "ваша_зона1"
+  zone = "ваша_зона"
 }
 
-resource "yandex_compute_instance" "web_server1" {
-  name = "web-server-1"
-  zone = "ваша_зона1"
+resource "yandex_vpc" "vpc" {
+  name = "my-vpc"
+}
 
+resource "yandex_subnet" "public_subnet" {
+  name           = "public-subnet"
+  vpc_id         = yandex_vpc.vpc.id
+  zone           = "ваша_зона"
+  network_id     = yandex_vpc.vpc.default_network_id
+  traffic_filter_rule {
+    direction     = "INGRESS"
+    action        = "ALLOW"
+    ip_version    = "IPV4"
+    destination_port_range {
+      from_port   = 0
+      to_port     = 65535
+    }
+  }
+}
+
+resource "yandex_subnet" "private_subnet" {
+  name           = "private-subnet"
+  vpc_id         = yandex_vpc.vpc.id
+  zone           = "ваша_зона"
+  network_id     = yandex_vpc.vpc.default_network_id
+  traffic_filter_rule {
+    direction     = "INGRESS"
+    action        = "ALLOW"
+    ip_version    = "IPV4"
+    destination_port_range {
+      from_port   = 0
+      to_port     = 65535
+    }
+  }
+}
+
+resource "yandex_instance" "bastion_host" {
+  name           = "bastion-host"
+  zone           = "ваша_зона"
+  platform_id    = "standard-v1"
+  resources {
+    cores  = 1
+    memory = 2
+  }
   boot_disk {
     initialize_params {
       image_id = "ваш_образ_ОС"
     }
   }
+  network_interfaces {
+    subnet_id = yandex_subnet.public_subnet.id
+    security_groups = ["allow-ssh"]
+  }
+}
 
+resource "yandex_instance" "web_server" {
+  name           = "web-server"
+  zone           = "ваша_зона"
+  platform_id    = "standard-v1"
   resources {
     cores  = 2
     memory = 4
   }
-}
-
-resource "yandex_compute_instance" "web_server2" {
-  name = "web-server-2"
-  zone = "ваша_зона2"
-
   boot_disk {
     initialize_params {
       image_id = "ваш_образ_ОС"
     }
   }
+  network_interfaces {
+    subnet_id = yandex_subnet.private_subnet.id
+  }
+}
 
+resource "yandex_instance" "elasticsearch_server" {
+  name           = "elasticsearch-server"
+  zone           = "ваша_зона"
+  platform_id    = "standard-v1"
+  resources {
+    cores  = 4
+    memory = 8
+  }
+  boot_disk {
+    initialize_params {
+      image_id = "ваш_образ_ОС"
+    }
+  }
+  network_interfaces {
+    subnet_id = yandex_subnet.private_subnet.id
+  }
+}
+
+resource "yandex_instance" "zabbix_server" {
+  name           = "zabbix-server"
+  zone           = "ваша_зона"
+  platform_id    = "standard-v1"
   resources {
     cores  = 2
     memory = 4
   }
-}
-
-resource "yandex_lb_target_group" "web_target_group" {
-  name = "web-target-group"
-}
-
-resource "yandex_lb_backend_group" "web_backend_group" {
-  name = "web-backend-group"
-
-  backend {
-    target_group_id = yandex_lb_target_group.web_target_group.id
-  }
-}
-
-resource "yandex_lb_backend" "web_backend1" {
-  backend_group_id = yandex_lb_backend_group.web_backend_group.id
-  target {
-    subnet_id = yandex_compute_instance.web_server1.network_interfaces.0.subnet_id
-  }
-}
-
-resource "yandex_lb_backend" "web_backend2" {
-  backend_group_id = yandex_lb_backend_group.web_backend_group.id
-  target {
-    subnet_id = yandex_compute_instance.web_server2.network_interfaces.0.subnet_id
-  }
-}
-
-resource "yandex_lb_router" "web_router" {
-  name = "web-router"
-
-  default_route_action {
-    target_group_id = yandex_lb_backend_group.web_backend_group.id
-  }
-
-  http_route_action {
-    priority = 10
-    prefix   = "/"
-    target_group_id = yandex_lb_backend_group.web_backend_group.id
-  }
-}
-
-resource "yandex_lb" "web_lb" {
-  name = "web-lb"
-
-  listener {
-    name = "web-listener"
-    port = 80
-    target_port = 80
-    external_address_spec {
-      ip_version = "ipv4"
+  boot_disk {
+    initialize_params {
+      image_id = "ваш_образ_ОС"
     }
   }
+  network_interfaces {
+    subnet_id = yandex_subnet.public_subnet.id
+  }
+}
 
-  attached_target_group {
-    target_group_id = yandex_lb_target_group.web_target_group.id
+resource "yandex_instance" "kibana_server" {
+  name           = "kibana-server"
+  zone           = "ваша_зона"
+  platform_id    = "standard-v1"
+  resources {
+    cores  = 2
+    memory = 4
+  }
+  boot_disk {
+    initialize_params {
+      image_id = "ваш_образ_ОС"
+    }
+  }
+  network_interfaces {
+    subnet_id = yandex_subnet.public_subnet.id
+  }
+}
+
+resource "yandex_instance" "alb" {
+  name           = "application-load-balancer"
+  zone           = "ваша_зона"
+  platform_id    = "standard-v1"
+  resources {
+    cores  = 2
+    memory = 4
+  }
+  boot_disk {
+    initialize_params {
+      image_id = "ваш_образ_ОС"
+    }
+  }
+  network_interfaces {
+    subnet_id = yandex_subnet.public_subnet.id
+  }
+}
+
+resource "yandex_network_security_group" "ssh_sg" {
+  name = "allow-ssh"
+}
+
+resource "yandex_network_security_group_rule" "ssh_rule" {
+  security_group_id = yandex_network_security_group.ssh_sg.id
+  direction         = "INGRESS"
+  action            = "ALLOW"
+  ip_protocol       = "tcp"
+  port_range {
+    from_port = 22
+    to_port   = 22
+  }
+}
+
+resource "yandex_compute_firewall" "allow_ssh" {
+  name        = "allow-ssh"
+  folder_id   = "ваш_folder_id"
+  description = "Allow SSH traffic"
+  direction   = "INGRESS"
+  rule {
+    action      = "ALLOW"
+    ip_version  = "IPV4"
+    port_range {
+      from_port = 22
+      to_port   = 22
+    }
+    protocol    = "tcp"
+  }
+  target {
+    security_group_id = yandex_network_security_group.ssh_sg.id
   }
 }
 ```
@@ -111,12 +201,19 @@ terraform apply
 
 ### Ansible
 
-1. Создайте файл `ansible-playbook.yml`:
+1. Создайте файл `ansible.cfg`:
+
+```ini
+[ssh_connection]
+ssh_args = -o ProxyJump=ваш_пользователь@<IP_бастион_хоста>
+```
+
+2. Создайте файл `ansible-playbook.yml`:
 
 ```yaml
 ---
 - name: Configure Nginx on Web Servers
-  hosts: all
+  hosts: web_server
   become: true
   tasks:
     - name: Install Nginx
@@ -131,12 +228,12 @@ terraform apply
         enabled: yes
 ```
 
-2. Запустите Ansible:
+3. Запустите Ansible:
 
 ```bash
-ansible-playbook -i <ip_web_server1>,<ip_web_server2>, -u <ваш_пользователь> ansible-playbook.yml
+ansible-playbook -i <IP_веб_сервера>, -u <ваш_пользователь> --private-key=<путь_к_ключу> ansible-playbook.yml
 ```
 
-Замените `<ip_web_server1>`, `<ip_web_server2>`, и `<ваш_пользователь>` на соответствующие значения.
+Замените `<IP_веб_сервера>`, `<ваш_пользователь>`, и `<путь_к_ключу>` на соответствующие значения.
 
-Теперь у вас должны быть настроенные серверы с установленным Nginx, созданный Load Balancer и настроенные Target и Backend Groups. Убедитесь, что ваши переменные в конфигурационных файлах Terraform и Ansible соответствуют вашим настройкам.
+Теперь у вас должна быть развернута инфраструктура с использованием VPC, приватных и публичных подсетей, бастион х
