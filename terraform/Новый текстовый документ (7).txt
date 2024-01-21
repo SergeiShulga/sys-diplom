@@ -1,0 +1,183 @@
+Давайте продолжим с использованием Terraform и Ansible для развертывания мониторинга и логирования в Yandex Cloud.
+
+### Terraform
+
+1. Создайте файл `main.tf` для развертывания сервера с Zabbix и двух серверов с Elasticsearch и Kibana:
+
+```hcl
+provider "yandex" {
+  token = "ваш_токен"
+  cloud_id = "ваш_cloud_id"
+  folder_id = "ваш_folder_id"
+  zone = "ваша_зона"
+}
+
+resource "yandex_compute_instance" "zabbix_server" {
+  name           = "zabbix-server"
+  zone           = "ваша_зона"
+  platform_id    = "standard-v1"
+  resources {
+    cores  = 2
+    memory = 4
+  }
+  boot_disk {
+    initialize_params {
+      image_id = "ваш_образ_ОС"
+    }
+  }
+  network_interfaces {
+    subnet_id = yandex_subnet.private_subnet.id
+  }
+}
+
+resource "yandex_compute_instance" "elasticsearch_server" {
+  name           = "elasticsearch-server"
+  zone           = "ваша_зона"
+  platform_id    = "standard-v1"
+  resources {
+    cores  = 4
+    memory = 8
+  }
+  boot_disk {
+    initialize_params {
+      image_id = "ваш_образ_ОС"
+    }
+  }
+  network_interfaces {
+    subnet_id = yandex_subnet.private_subnet.id
+  }
+}
+
+resource "yandex_compute_instance" "kibana_server" {
+  name           = "kibana-server"
+  zone           = "ваша_зона"
+  platform_id    = "standard-v1"
+  resources {
+    cores  = 2
+    memory = 4
+  }
+  boot_disk {
+    initialize_params {
+      image_id = "ваш_образ_ОС"
+    }
+  }
+  network_interfaces {
+    subnet_id = yandex_subnet.private_subnet.id
+  }
+}
+```
+
+2. Запустите команды Terraform:
+
+```bash
+terraform init
+terraform apply
+```
+
+### Ansible
+
+1. Создайте файл `ansible-playbook-zabbix.yml`:
+
+```yaml
+---
+- name: Install and Configure Zabbix Server
+  hosts: zabbix_server
+  become: true
+  tasks:
+    - name: Install Zabbix Server
+      yum:
+        name: zabbix-server-pgsql
+        state: present
+
+    - name: Install Zabbix Agent
+      yum:
+        name: zabbix-agent
+        state: present
+
+    - name: Configure Zabbix Server
+      template:
+        src: zabbix_server.conf.j2
+        dest: /etc/zabbix/zabbix_server.conf
+      notify: restart zabbix-server
+
+    - name: Configure Zabbix Agent
+      template:
+        src: zabbix_agentd.conf.j2
+        dest: /etc/zabbix/zabbix_agentd.conf
+      notify: restart zabbix-agent
+
+  handlers:
+    - name: restart zabbix-server
+      service:
+        name: zabbix-server
+        state: restarted
+
+    - name: restart zabbix-agent
+      service:
+        name: zabbix-agent
+        state: restarted
+```
+
+2. Создайте файлы шаблонов для конфигурации Zabbix Server и Agent: `zabbix_server.conf.j2` и `zabbix_agentd.conf.j2`.
+
+`zabbix_server.conf.j2`:
+
+```ini
+# /etc/zabbix/zabbix_server.conf
+
+DBHost=localhost
+DBName=zabbix
+DBUser=zabbix
+DBPassword=zabbix_password
+```
+
+`zabbix_agentd.conf.j2`:
+
+```ini
+# /etc/zabbix/zabbix_agentd.conf
+
+Server=zabbix_server_ip
+ServerActive=zabbix_server_ip
+Hostname=ansible_managed_host
+```
+
+3. Создайте файл `ansible-playbook-elk.yml`:
+
+```yaml
+---
+- name: Install and Configure ELK Stack
+  hosts: elasticsearch_server
+  become: true
+  tasks:
+    - name: Install Elasticsearch
+      yum:
+        name: elasticsearch
+        state: present
+
+    - name: Install Kibana
+      yum:
+        name: kibana
+        state: present
+
+  handlers:
+    - name: restart elasticsearch
+      service:
+        name: elasticsearch
+        state: restarted
+
+    - name: restart kibana
+      service:
+        name: kibana
+        state: restarted
+```
+
+4. Запустите Ansible:
+
+```bash
+ansible-playbook -i <IP_zabbix_server>,<IP_elasticsearch_server>,<IP_kibana_server>, -u <ваш_пользователь> --private-key=<путь_к_ключу> ansible-playbook-zabbix.yml
+ansible-playbook -i <IP_elasticsearch_server>,<IP_kibana_server>, -u <ваш_пользователь> --private-key=<путь_к_ключу> ansible-playbook-elk.yml
+```
+
+5. После завершения выполнения скриптов, подключитесь к Kibana (http://<IP_kibana_server>:5601) и настройте индексы для отображения логов.
+
+Эти конфигурации являются основой и могут потребовать дополнительной настройки в зависимости от ваших требований. Также обратите внимание, что для безопасности в реальной среде необходимо использовать SSL для связи между компонентами и защищать связь с Kibana с использованием аутентификации.
