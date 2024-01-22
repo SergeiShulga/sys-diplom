@@ -1,0 +1,104 @@
+Для выполнения данной задачи понадобится создать файлы конфигурации Terraform.
+
+1. Создайте файл с именем `main.tf` и вставьте следующий код:
+
+```hcl
+provider "yandex" {
+  token        = "<YANDEX_CLOUD_TOKEN>"
+  cloud_id     = "<YANDEX_CLOUD_ID>"
+  folder_id    = "<YANDEX_CLOUD_FOLDER_ID>"
+  zone         = "<YANDEX_CLOUD_ZONE>"
+}
+
+resource "yandex_compute_instance" "web_server_1" {
+  name         = "web-server-1"
+  zone         = "<YANDEX_CLOUD_ZONE>"
+  platform_id  = "standard-v1"
+  boot_disk {
+    initialize_params {
+      image_id = "fd8vpofkr0v5n336koh2"
+    }
+  }
+  metadata = {
+    ssh-keys = "ubuntu:<YOUR_SSH_PUBLIC_KEY>"
+  }
+}
+
+resource "yandex_compute_instance" "web_server_2" {
+  name         = "web-server-2"
+  zone         = "<YANDEX_CLOUD_ZONE>"
+  platform_id  = "standard-v1"
+  boot_disk {
+    initialize_params {
+      image_id = "fd8vpofkr0v5n336koh2"
+    }
+  }
+  metadata = {
+    ssh-keys = "ubuntu:<YOUR_SSH_PUBLIC_KEY>"
+  }
+}
+```
+
+2. В строке `token` укажите свой токен Yandex Cloud.
+3. В строке `cloud_id` укажите ID вашего облака Yandex Cloud.
+4. В строке `folder_id` укажите ID вашей папки в Yandex Cloud, где будут созданы ресурсы.
+5. В строке `zone` укажите зону, в которой будут созданы веб-сервера (например, `ru-central1-a`).
+6. В строке `image_id` укажите ID образа операционной системы. В данном случае используется образ Ubuntu 20.04 LTS (fd8vpofkr0v5n336koh2).
+7. В строке `metadata` укажите свой открытый SSH-ключ для подключения к веб-серверам.
+
+8. Создайте файл с именем `backend.tf` и вставьте следующий код:
+
+```hcl
+resource "yandex_lb_target_group" "target_group" {
+  name = "web-servers-target-group"
+  region_id = "<YANDEX_CLOUD_REGION>"
+  folder_id = "<YANDEX_CLOUD_FOLDER_ID>"
+}
+
+resource "yandex_lb_backend_group" "backend_group" {
+  name = "web-servers-backend-group"
+  region_id = "<YANDEX_CLOUD_REGION>"
+  folder_id = "<YANDEX_CLOUD_FOLDER_ID>"
+
+  backend {
+    target_group_id = yandex_lb_target_group.target_group.id
+  }
+}
+
+resource "yandex_lb_http_router" "http_router" {
+  name = "web-servers-http-router"
+  region_id = "<YANDEX_CLOUD_REGION>"
+  folder_id = "<YANDEX_CLOUD_FOLDER_ID>"
+  listener {
+    name = "listener"
+    port = 80
+    type = "http"
+    external_address {
+      ip_version = "ipv4"
+    }
+  }
+  default_service {
+    backend_group_id = yandex_lb_backend_group.backend_group.id
+    healthcheck {
+      name = "healthcheck"
+      interval = "10s"
+      timeout = "5s"
+      healthy_threshold = 2
+      unhealthy_threshold = 3
+      http_options {
+        port = 80
+        path = "/"
+        method = "GET"
+      }
+    }
+  }
+}
+```
+
+9. В строке `region_id` укажите ваш регион Yandex Cloud (например, `ru-central1`).
+10. В строке `folder_id` укажите ID вашей папки в Yandex Cloud, где будут созданы ресурсы.
+
+11. Выполните команду `terraform init` для инициализации Terraform в текущей директории.
+12. Выполните команду `terraform apply` для создания ресурсов в Yandex Cloud.
+
+После выполнения команды `terraform apply` будут созданы две виртуальные машины в разных зонах с установленным сервером nginx. Также будут созданы Target Group, Backend Group и
