@@ -180,4 +180,191 @@ ansible-playbook -i <IP_elasticsearch_server>,<IP_kibana_server>, -u <ваш_п�
 
 5. После завершения выполнения скриптов, подключитесь к Kibana (http://<IP_kibana_server>:5601) и настройте индексы для отображения логов.
 
-Эти конфигурации являются основой и могут потребовать дополнительной настройки в зависимости от ваших требований. Также обратите внимание, что для безопасности в реальной среде необходимо использовать SSL для связи между компонентами и защищать связь с Kibana с использованием аутентификации.
+Эти конфигурации являются основой и могут потребовать дополнительной настройки в зависимости от ваших требований. Также обратите внимание,
+
+что для безопасности в реальной среде необходимо использовать SSL для связи между компонентами и защищать связь с Kibana с использованием аутентификации.
+
+
+
+
+Для решения данной задачи, следует воспользоваться Terraform и Ansible, как было указано в предыдущих шагах. Давайте расширим предыдущий пример и добавим развертывание Elasticsearch, Filebeat, и Kibana.
+
+### Шаг 1: Terraform
+
+Добавим в Terraform конфигурации для развертывания VM с Elasticsearch и VM с Kibana.
+
+```hcl
+# Terraform configuration
+
+resource "yandex_compute_instance" "elasticsearch_server" {
+  name         = "elasticsearch-server"
+  zone         = "ru-central1-a"
+  machine_type = "standard-b2s"
+  resources {
+    cores  = 2
+    memory = 2
+  }
+  boot_disk {
+    size = 10
+  }
+  secondary_disk {
+    device_name = "data-disk"
+    size        = 10
+  }
+  preemptible  = true
+  hostname     = "elasticsearch-server.ru-central1.internal"
+}
+
+resource "yandex_compute_instance" "kibana_server" {
+  name         = "kibana-server"
+  zone         = "ru-central1-a"
+  machine_type = "standard-b2s"
+  resources {
+    cores  = 2
+    memory = 2
+  }
+  boot_disk {
+    size = 10
+  }
+  secondary_disk {
+    device_name = "data-disk"
+    size        = 10
+  }
+  preemptible  = true
+  hostname     = "kibana-server.ru-central1.internal"
+}
+```
+
+### Шаг 2: Ansible
+
+Создайте новый инвентарный файл для Ansible с учетом новых серверов.
+
+```ini
+# inventory.ini
+
+[web_servers]
+web-server.ru-central1.internal ansible_ssh_common_args='-o ProxyCommand="ssh -i /path/to/your/private/key -W %h:%p user@bastion-host.ru-central1.internal"'
+
+[elasticsearch_servers]
+elasticsearch-server.ru-central1.internal ansible_ssh_common_args='-o ProxyCommand="ssh -i /path/to/your/private/key -W %h:%p user@bastion-host.ru-central1.internal"'
+
+[kibana_servers]
+kibana-server.ru-central1.internal ansible_ssh_common_args='-o ProxyCommand="ssh -i /path/to/your/private/key -W %h:%p user@bastion-host.ru-central1.internal"'
+```
+
+Создайте новый плейбук Ansible для установки и настройки Elasticsearch, Filebeat и Kibana.
+
+```yaml
+# deploy_logging.yml
+
+- name: Deploy and configure Elasticsearch
+  hosts: elasticsearch_servers
+  become: true
+  tasks:
+    - name: Install Java
+      apt:
+        name: openjdk-11-jre
+        state: present
+
+    - name: Download and install Elasticsearch
+      get_url:
+        url: https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-7.15.0-linux-x86_64.tar.gz
+        dest: /tmp/elasticsearch-7.15.0-linux-x86_64.tar.gz
+        mode: 0644
+      become: true
+      notify: Restart Elasticsearch
+
+    - name: Extract Elasticsearch
+      ansible.builtin.unarchive:
+        src: /tmp/elasticsearch-7.15.0-linux-x86_64.tar.gz
+        dest: /opt
+      become: true
+      notify: Restart Elasticsearch
+
+  handlers:
+    - name: Restart Elasticsearch
+      ansible.builtin.systemd:
+        name: elasticsearch
+        state: restarted
+
+- name: Deploy and configure Filebeat to send logs to Elasticsearch
+  hosts: web_servers
+  become: true
+  tasks:
+    - name: Download and install Filebeat
+      get_url:
+        url: https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-7.15.0-linux-x86_64.tar.gz
+        dest: /tmp/filebeat-7.15.0-linux-x86_64.tar.gz
+        mode: 0644
+      notify: Restart Filebeat
+
+    - name: Extract Filebeat
+      ansible.builtin.unarchive:
+        src: /tmp/filebeat-7.15.0-linux-x86_64.tar.gz
+        dest: /opt
+      notify: Restart Filebeat
+
+    - name: Copy Filebeat configuration
+      template:
+        src: filebeat.yml.j2
+        dest: /etc/filebeat/filebeat.yml
+      notify: Restart Filebeat
+
+  handlers:
+    - name: Restart Filebeat
+      ansible.builtin.systemd:
+        name: filebeat
+        state: restarted
+
+- name: Deploy and configure Kibana
+  hosts: kibana_servers
+  become: true
+  tasks:
+    - name: Download and install Kibana
+      get_url:
+        url: https://artifacts.elastic.co/downloads/kibana/kibana-7.15.0-linux-x86_64.tar.gz
+        dest: /tmp/kibana-7.15.0-linux-x86_64.tar.gz
+        mode: 0644
+      notify: Restart Kibana
+
+    - name: Extract Kibana
+      ansible.builtin.unarchive:
+        src: /tmp/kibana-7.15.0-linux-x86_64.tar.gz
+        dest: /opt
+      notify: Restart Kibana
+
+  handlers:
+    - name: Restart Kibana
+      ansible.builtin.systemd:
+        name: kibana
+        state: restarted
+```
+
+Создайте шаблон `filebeat.yml.j2` для настройки Filebeat, например:
+
+```yaml
+filebeat.inputs:
+- type: log
+  enabled: true
+  paths:
+    - /var/log/nginx/access.log
+    - /var/log/nginx/error.log
+
+output.elasticsearch:
+  hosts: ["elasticsearch-server.ru-central1.internal:9200"]
+  username: "your_elasticsearch_username"
+  password: "your_elasticsearch_password"
+```
+
+### Шаг 3: Запуск
+
+Выполните Terraform для развертывания инфраструктуры, а затем Ansible для установки и настройки Elasticsearch, Filebeat и Kibana.
+
+```bash
+terraform init
+terraform apply
+
+ansible-playbook -i inventory.ini deploy_logging.yml
+```
+
+Таким образом, вы развернете виртуальные машины с Elasticsearch, Filebeat и Kibana, настроите их для сбора и визуализации логов.
