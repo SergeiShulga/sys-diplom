@@ -37,7 +37,7 @@
 Создайте две ВМ в разных зонах, установите на них сервер nginx, если его там нет. ОС и содержимое ВМ должно быть идентичным, это будут наши веб-сервера.
 
 Используйте набор статичных файлов для сайта. Можно переиспользовать сайт из домашнего задания.
-...
+'''
 ## vm-1
 resource "yandex_compute_instance" "vm-1" {
   name                      = "linux-vm1"
@@ -72,9 +72,9 @@ scheduling_policy {
     nat       = true
   }
 }
-...
+'''
 
-...
+'''
 ### vm-2
 
 resource "yandex_compute_instance" "vm-2" {
@@ -110,7 +110,7 @@ scheduling_policy {
     nat       = true
   }
 }
-...
+'''
 
 Создайте [Target Group](https://cloud.yandex.com/docs/application-load-balancer/concepts/target-group), включите в неё две созданных ВМ.
 
